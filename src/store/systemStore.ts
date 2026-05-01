@@ -9,10 +9,12 @@ interface SystemState {
   processes: SimProcess[]
   carbon: CarbonSnapshot | null
   forecast: CarbonForecastPoint[]
+  forecastStaleMessage?: string
   schedulerCycle: number
   lastDecisionAt?: string
   decisionMeta: Record<string, DecisionMeta>
   tick: () => void
+  setClock: (value: number) => void
   refreshCarbon: () => Promise<void>
   runScheduler: () => Promise<void>
 }
@@ -24,6 +26,13 @@ const progressByEnergy: Record<SimProcess['energy'], number> = {
 }
 
 const clampProgress = (value: number): number => Math.min(100, Math.max(0, value))
+const parseEtaTimestamp = (value?: string): number | undefined => {
+  if (!value) {
+    return undefined
+  }
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? undefined : parsed
+}
 
 const applyKernelTick = (process: SimProcess): SimProcess => {
   if (process.status === 'COMPLETED') {
@@ -50,19 +59,29 @@ export const useSystemStore = create<SystemState>((set, get) => ({
   processes: initialProcesses,
   carbon: null,
   forecast: [],
+  forecastStaleMessage: undefined,
   schedulerCycle: 0,
   decisionMeta: {},
   tick: () => {
     set((state) => ({
-      clock: Date.now(),
+      clock: state.clock + 1000,
       processes: state.processes.map(applyKernelTick),
     }))
   },
+  setClock: (value: number) => {
+    set({ clock: value })
+  },
   refreshCarbon: async () => {
-    const data = await fetchCarbonData()
+    const state = get()
+    const data = await fetchCarbonData({
+      atTime: state.clock,
+      existingForecast: state.forecast,
+      existingCurrent: state.carbon,
+    })
     set({
       carbon: data.current,
       forecast: data.forecast,
+      forecastStaleMessage: data.meta.staleMessage,
     })
   },
   runScheduler: async () => {
@@ -83,6 +102,8 @@ export const useSystemStore = create<SystemState>((set, get) => ({
     const at = new Date().toISOString()
 
     set((currentState) => {
+      const now = currentState.clock
+      const heldByEta = new Set<string>()
       const updatedProcesses = currentState.processes.map((process) => {
         if (process.type !== 'BACKGROUND' || process.status === 'COMPLETED') {
           return process
@@ -91,6 +112,16 @@ export const useSystemStore = create<SystemState>((set, get) => ({
         const decision = result.decisions[process.id]
         if (!decision) {
           return process
+        }
+
+        if (process.status === 'PAUSED_ECO' && decision.action !== 'PAUSE') {
+          const holdUntil =
+            parseEtaTimestamp(currentState.decisionMeta[process.id]?.eta) ??
+            parseEtaTimestamp(decision.eta)
+          if (holdUntil && now < holdUntil) {
+            heldByEta.add(process.id)
+            return process
+          }
         }
 
         let nextStatus: SimProcess['status']
@@ -106,10 +137,23 @@ export const useSystemStore = create<SystemState>((set, get) => ({
 
       const nextMeta = { ...currentState.decisionMeta }
       for (const [processId, decision] of Object.entries(result.decisions)) {
+        if (heldByEta.has(processId)) {
+          continue
+        }
+        const existingMeta = currentState.decisionMeta[processId]
+        const currentProcess = currentState.processes.find((process) => process.id === processId)
+        const existingEtaTs = parseEtaTimestamp(existingMeta?.eta)
+        const nextEtaTs = parseEtaTimestamp(decision.eta)
+        const keepExistingPauseEta =
+          currentProcess?.status === 'PAUSED_ECO' &&
+          decision.action === 'PAUSE' &&
+          existingEtaTs !== undefined &&
+          (nextEtaTs === undefined || nextEtaTs >= existingEtaTs)
+
         nextMeta[processId] = {
           action: decision.action,
           reasoning: decision.reasoning,
-          eta: decision.eta,
+          eta: keepExistingPauseEta ? existingMeta?.eta : decision.eta,
           triggerCarbon: currentState.carbon?.intensity ?? 0,
           at,
         }

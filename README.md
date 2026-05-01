@@ -1,12 +1,11 @@
 # GridTasks
 
-GridTasks is a carbon-aware OS utility simulator. It runs a mock process scheduler that:
+GridTasks is a energy focused task manager simulator. It runs a mock process scheduler that:
 
-- tracks active critical/background tasks
-- fetches live UK carbon-intensity data (with fallback simulated grid)
-- calls Gemini 1.5 Flash for pause/throttle/resume decisions
+- fetches live CO2 intensity data from the UK grid
+- calls Gemini for pause/throttle/resume decisions
 - applies decisions in a closed loop every 60s
-- surfaces AI reasoning + trigger metrics in the UI
+- user can view AI reasoning + trigger metrics in the UI
 
 ## Stack
 
@@ -15,7 +14,7 @@ GridTasks is a carbon-aware OS utility simulator. It runs a mock process schedul
 - Tailwind CSS for terminal-style dark UI
 - Google Generative AI SDK (`@google/generative-ai`)
 
-## Setup
+## How to Run Locally
 
 1. Install dependencies:
    ```bash
@@ -29,8 +28,7 @@ GridTasks is a carbon-aware OS utility simulator. It runs a mock process schedul
    ```bash
    npm run dev
    ```
-
-## Environment Variables
+4. Environment Variables
 
 - `VITE_GEMINI_API_KEY` (optional): if missing or invalid, app auto-falls back to heuristic scheduler logic.
 
@@ -43,8 +41,4 @@ GridTasks is a carbon-aware OS utility simulator. It runs a mock process schedul
 
 ## Core Behavior
 
-1. **Kernel Tick**: every second, running/throttled tasks progress; paused tasks hold; tasks complete at 100%.
-2. **Carbon Monitor**: every 60 seconds fetches current intensity + 24h forecast.
-3. **AI Scheduler**: sends intensity + forecast + background tasks to Gemini; receives per-process JSON actions.
-4. **Safety Rule**: critical tasks are never paused by scheduler.
-5. **Reasoning Trace**: decisions stored in state and shown via eco icon pop-over.
+The program fetches live CO2 intensity data from the UK grid (https://api.carbonintensity.org.uk/) and calls Gemini with the relavent info (data from UK grid, task priority, and energy requirement). The AI then decides to keep the task running, throttle, or eco-pause appropiatley. The progress bars on the task update every second and shows the percent completion of the task. The user can click on info buttons across the app to view what the statistics mean and the AI's reasoning behind its decisions.

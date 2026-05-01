@@ -25,6 +25,10 @@ export interface CarbonSnapshot {
   observedAt: string
 }
 
+export interface ForecastMeta {
+  staleMessage?: string
+}
+
 export interface ProcessDecision {
   action: SchedulerAction
   reasoning: string

@@ -1,4 +1,4 @@
-import type { CarbonForecastPoint, CarbonSnapshot } from '../types'
+import type { CarbonForecastPoint, CarbonSnapshot, ForecastMeta } from '../types'
 
 const CARBON_API_BASE = 'https://api.carbonintensity.org.uk'
 
@@ -32,40 +32,32 @@ const generateSimulatedForecast = (from = new Date()): CarbonForecastPoint[] => 
   return points
 }
 
-export const fetchCarbonData = async (): Promise<{
+export const fetchCarbonData = async (params?: {
+  atTime?: number
+  existingForecast?: CarbonForecastPoint[]
+  existingCurrent?: CarbonSnapshot | null
+}): Promise<{
   current: CarbonSnapshot
   forecast: CarbonForecastPoint[]
+  meta: ForecastMeta
 }> => {
+  const requestedAt = params?.atTime ?? Date.now()
+  const target = new Date(requestedAt)
+
   try {
-    const now = new Date()
-    const to = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+    const to = new Date(target.getTime() + 24 * 60 * 60 * 1000)
 
-    const [currentRes, forecastRes] = await Promise.all([
-      fetch(`${CARBON_API_BASE}/intensity`),
-      fetch(
-        `${CARBON_API_BASE}/intensity/${formatApiTime(now)}/${formatApiTime(to)}`,
-      ),
-    ])
+    const forecastRes = await fetch(
+      `${CARBON_API_BASE}/intensity/${formatApiTime(target)}/${formatApiTime(to)}`,
+    )
 
-    if (!currentRes.ok || !forecastRes.ok) {
+    if (!forecastRes.ok) {
       throw new Error('Carbon API request failed')
     }
 
-    const currentJson = (await currentRes.json()) as {
-      data?: Array<{ from: string; intensity: { forecast?: number; actual?: number } }>
-    }
     const forecastJson = (await forecastRes.json()) as {
       data?: Array<{ from: string; intensity: { forecast?: number; actual?: number } }>
     }
-
-    const currentEntry = currentJson.data?.[0]
-    if (!currentEntry) {
-      throw new Error('Carbon API returned empty current dataset')
-    }
-
-    const currentIntensity = Math.round(
-      currentEntry.intensity.actual ?? currentEntry.intensity.forecast ?? 250,
-    )
 
     const forecast = (forecastJson.data ?? [])
       .map((item) => ({
@@ -78,18 +70,40 @@ export const fetchCarbonData = async (): Promise<{
       throw new Error('Carbon API returned empty forecast dataset')
     }
 
+    const currentIntensity = forecast[0]?.intensity ?? 250
+    const observedAt = forecast[0]?.time ?? target.toISOString()
+
     return {
       current: {
         region: 'UK National Grid',
         intensity: currentIntensity,
         index: classifyIntensity(currentIntensity),
         source: 'LIVE_API',
-        observedAt: currentEntry.from,
+        observedAt,
       },
       forecast,
+      meta: {},
     }
   } catch {
-    const forecast = generateSimulatedForecast()
+    const targetInFuture = requestedAt > Date.now()
+    if (
+      targetInFuture &&
+      params?.existingForecast &&
+      params.existingForecast.length > 0 &&
+      params.existingCurrent
+    ) {
+      return {
+        current: params.existingCurrent,
+        forecast: params.existingForecast,
+        meta: {
+          staleMessage: `Forecast unavailable for selected future date. Showing latest 24h forecast from ${new Date(
+            params.existingCurrent.observedAt,
+          ).toLocaleString()}.`,
+        },
+      }
+    }
+
+    const forecast = generateSimulatedForecast(target)
     const currentIntensity = forecast[0]?.intensity ?? 250
 
     return {
@@ -98,9 +112,10 @@ export const fetchCarbonData = async (): Promise<{
         intensity: currentIntensity,
         index: classifyIntensity(currentIntensity),
         source: 'SIMULATED_GRID',
-        observedAt: new Date().toISOString(),
+        observedAt: target.toISOString(),
       },
       forecast,
+      meta: {},
     }
   }
 }

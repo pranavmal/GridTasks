@@ -19,7 +19,7 @@ export const ReasoningModal = ({
 
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-black/60 p-4">
-      <div className="w-full max-w-lg rounded-lg border border-terminal-line bg-terminal-panel p-6 shadow-neon">
+      <div className="w-full max-w-lg rounded-lg bg-terminal-panel p-6">
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold uppercase tracking-widest text-terminal-accent">
@@ -29,7 +29,7 @@ export const ReasoningModal = ({
           </div>
           <button
             type="button"
-            className="rounded border border-terminal-line px-2 py-1 text-xs text-slate-300 hover:bg-terminal-line/40"
+            className="rounded px-2 py-1 text-xs text-slate-300 hover:bg-terminal-line/40"
             onClick={onClose}
           >
             CLOSE
@@ -52,6 +52,11 @@ export const ReasoningModal = ({
           <p>
             <span className="text-slate-400">Action: </span>
             {data.action}
+          </p>
+          <p>
+            <span className="text-slate-400">Factors considered: </span>
+            Carbon intensity level, clean-window forecast timing, task energy demand, process type, and
+            current progress.
           </p>
         </div>
       </div>
